@@ -4,7 +4,43 @@ const { GoalNear } = goals;
 const TelegramBot  = require('node-telegram-bot-api');
 const fs           = require('fs');
 const path         = require('path');
-const config       = require('./config.json');
+
+// ── دعم متغيرات البيئة (Railway) أو config.json (محلي) ──────
+let config;
+try {
+  config = require('./config.json');
+  // دمج متغيرات البيئة فوق config.json إن وُجدت
+  if (process.env.TELEGRAM_TOKEN)   config.telegram.token     = process.env.TELEGRAM_TOKEN;
+  if (process.env.TELEGRAM_CHAT_ID) config.telegram.chatId    = process.env.TELEGRAM_CHAT_ID;
+  if (process.env.SERVER_HOST)      config.server.host        = process.env.SERVER_HOST;
+  if (process.env.SERVER_PORT)      config.server.port        = parseInt(process.env.SERVER_PORT);
+  if (process.env.BOT_USERNAME)     config.bot.username       = process.env.BOT_USERNAME;
+  if (process.env.BOT_AUTH)         config.bot.auth           = process.env.BOT_AUTH;
+  if (process.env.SERVER_VERSION)   config.server.version     = process.env.SERVER_VERSION;
+} catch (_) {
+  // Railway: لا يوجد config.json — استخدم متغيرات البيئة فقط
+  config = {
+    server: {
+      host:    process.env.SERVER_HOST    || 'localhost',
+      port:    parseInt(process.env.SERVER_PORT) || 25565,
+      version: process.env.SERVER_VERSION || '1.20.1',
+    },
+    bot: {
+      username: process.env.BOT_USERNAME || 'BotPlayer',
+      auth:     process.env.BOT_AUTH     || 'offline',
+    },
+    telegram: {
+      token:       process.env.TELEGRAM_TOKEN    || '',
+      chatId:      process.env.TELEGRAM_CHAT_ID  || '',
+      forwardChat: process.env.FORWARD_CHAT !== 'false',
+    },
+    settings: {
+      reconnectDelay:  parseInt(process.env.RECONNECT_DELAY)  || 5000,
+      wanderRadius:    parseInt(process.env.WANDER_RADIUS)    || 30,
+      wanderInterval:  parseInt(process.env.WANDER_INTERVAL)  || 10000,
+    },
+  };
+}
 
 // ═══════════════════════════════════════════════════════════════
 //  ألوان الكونسول
