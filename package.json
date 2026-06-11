@@ -1,0 +1,15 @@
+{
+  "name": "botmincraft",
+  "version": "1.0.0",
+  "description": "Minecraft Auto-Reconnect Wandering Bot",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "mineflayer": "^4.23.0",
+    "mineflayer-pathfinder": "^2.4.4",
+    "node-telegram-bot-api": "^0.67.0",
+    "vec3": "^0.1.10"
+  }
+}

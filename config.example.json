@@ -1,0 +1,21 @@
+{
+  "server": {
+    "host": "YOUR_SERVER_IP",
+    "port": 25565,
+    "version": "1.20.1"
+  },
+  "bot": {
+    "username": "BotPlayer",
+    "auth": "offline"
+  },
+  "telegram": {
+    "token": "YOUR_TELEGRAM_BOT_TOKEN",
+    "chatId": "YOUR_TELEGRAM_CHAT_ID",
+    "forwardChat": true
+  },
+  "settings": {
+    "reconnectDelay": 5000,
+    "wanderRadius": 30,
+    "wanderInterval": 10000
+  }
+}
