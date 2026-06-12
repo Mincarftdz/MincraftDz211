@@ -104,7 +104,10 @@ function newBotId() {
 
 function createBotState(id, host, port, username = 'BotPlayer', version = '1.20.1') {
   return {
-    id, host, port, username, version,
+    id, host, port,
+    username,              // الاسم الأساسي المحفوظ
+    currentUsername: username, // الاسم الحالي المستخدم
+    version,
     bot: null,
     isConnected: false,
     isBotRunning: false,
@@ -112,10 +115,35 @@ function createBotState(id, host, port, username = 'BotPlayer', version = '1.20.
     startTime: Date.now(),
     wanderTimer: null,
     reconnectTimer: null,
-    stuckTimer: null,       // كشف التعثّر
-    lastPos: null,          // آخر موقع للمقارنة
-    wanderOrigin: null,     // نقطة الانطلاق الأصلية
+    stuckTimer: null,
+    lastPos: null,
+    wanderOrigin: null,
+    lastWanderTime: 0,
+    isWandering: false,
   };
+}
+
+// ── قائمة أسماء للتدوير عند إعادة الاتصال ─────────────────────
+const USERNAME_POOL = [
+  'Steve', 'Alex', 'Notch', 'Herobrine', 'Dream', 'Technoblade',
+  'PhoenixSC', 'Skeppy', 'BadBoyHalo', 'Sapnap', 'GeorgeNotFound',
+  'TommyInnit', 'Wilbur', 'Tubbo', 'Ranboo', 'Quackity',
+  'xNestorio', 'Purpled', 'Punz', 'Antfrost', 'CaptainPuffy',
+  'Fundy', 'Eret', 'Nihachu', 'Karl', 'HBomb', 'Vikk', 'Lazar',
+  'Craft', 'Miner', 'Builder', 'Ranger', 'Knight', 'Wizard',
+  'Shadow', 'Ghost', 'Storm', 'Blaze', 'Frost', 'Ember',
+  'Viper', 'Hawk', 'Wolf', 'Bear', 'Fox', 'Eagle', 'Lion',
+];
+
+function getNextUsername(s) {
+  // إذا كان الاسم الأساسي ثابتاً، أضف رقماً عشوائياً
+  const base = s.username || 'Player';
+  // اختر اسماً عشوائياً من المجموعة + رقم عشوائي
+  const pick = USERNAME_POOL[Math.floor(Math.random() * USERNAME_POOL.length)];
+  const num  = Math.floor(Math.random() * 9000) + 1000;
+  // في أول اتصال استخدم الاسم الأصلي، ثم غيّره
+  if (s.reconnectCount === 0) return base;
+  return `${pick}${num}`;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -375,7 +403,7 @@ function initTelegram() {
       if (!s) { send(chatId, '❌ البوت غير موجود!', mainMenuKeyboard()); return; }
       const icon = s.isConnected ? '🟢 متصل' : '🔴 غير متصل';
       send(chatId,
-        `🤖 *البوت \`${id}\`*\n\n🌐 \`${s.host}:${s.port}\`\n🔌 ${icon}\n🔄 اتصالات: ${s.reconnectCount}\n\nاختر أمراً 👇`,
+        `🤖 *البوت \`${id}\`*\n\n🌐 \`${s.host}:${s.port}\`\n👤 الاسم: \`${s.currentUsername || s.username}\`\n🔌 ${icon}\n🔄 اتصالات: ${s.reconnectCount}\n\nاختر أمراً 👇`,
         botMenuKeyboard(id)
       );
       return;
@@ -533,13 +561,20 @@ function startBot(id) {
   clearBotTimers(s);
   s.isBotRunning = true;
   s.reconnectCount++;
-  log('info', `محاولة #${s.reconnectCount} → ${s.host}:${s.port}`, id);
+
+  // ── اختيار الاسم: أول اتصال = الاسم الأصلي، إعادة اتصال = اسم جديد ──
+  s.currentUsername = getNextUsername(s);
+  if (s.reconnectCount > 1) {
+    log('warn', `تغيير الاسم إلى: ${s.currentUsername}`, id);
+    notify(`🎭 [*${id}*] اسم جديد: \`${s.currentUsername}\``);
+  }
+  log('info', `محاولة #${s.reconnectCount} (${s.currentUsername}) → ${s.host}:${s.port}`, id);
 
   try {
     s.bot = mineflayer.createBot({
       host:     s.host,
       port:     s.port,
-      username: s.username,
+      username: s.currentUsername,
       auth:     config.bot.auth,
       version:  s.version,
       hideErrors: false,
@@ -618,14 +653,6 @@ function onSpawn(id) {
     if (s.isConnected && s.bot) {
       log('bot', 'وصل الهدف ← هدف جديد فوراً', id);
       doWander(id);
-    }
-  });
-
-  // ── عند فشل المسار: حاول مسار آخر ──────────────────────
-  s.bot.on('path_update', (r) => {
-    if ((r.status === 'noPath' || r.status === 'timeout') && s.isConnected && s.bot) {
-      log('warn', `مسار فشل (${r.status}) ← هدف جديد`, id);
-      setTimeout(() => doWander(id), 500);
     }
   });
 
@@ -740,6 +767,12 @@ function onPlayerLeft(id, player) {
 function doWander(id) {
   const s = botsMap.get(id);
   if (!s || !s.bot || !s.bot.entity || !s.isConnected) return;
+
+  // منع الاستدعاءات المتكررة أسرع من 2 ثانية
+  const now = Date.now();
+  if (now - s.lastWanderTime < 2000) return;
+  s.lastWanderTime = now;
+
   const pos = s.bot.entity.position;
 
   // نطاق تجول أكبر لضمان الحركة المستمرة (50 بلوك)
