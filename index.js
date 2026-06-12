@@ -112,6 +112,9 @@ function createBotState(id, host, port, username = 'BotPlayer', version = '1.20.
     startTime: Date.now(),
     wanderTimer: null,
     reconnectTimer: null,
+    stuckTimer: null,       // كشف التعثّر
+    lastPos: null,          // آخر موقع للمقارنة
+    wanderOrigin: null,     // نقطة الانطلاق الأصلية
   };
 }
 
@@ -572,8 +575,9 @@ function stopBot(id) {
 }
 
 function clearBotTimers(s) {
-  if (s.wanderTimer)    { clearInterval(s.wanderTimer);   s.wanderTimer = null; }
+  if (s.wanderTimer)    { clearInterval(s.wanderTimer);   s.wanderTimer    = null; }
   if (s.reconnectTimer) { clearTimeout(s.reconnectTimer); s.reconnectTimer = null; }
+  if (s.stuckTimer)     { clearInterval(s.stuckTimer);    s.stuckTimer     = null; }
   if (s.bot) {
     try { s.bot.removeAllListeners(); s.bot.quit(); } catch (_) {}
     s.bot = null;
@@ -605,11 +609,44 @@ function onSpawn(id) {
   mv.canDig         = false;
   s.bot.pathfinder.setMovements(mv);
 
-  // بدء التجول
+  // حفظ نقطة البداية للتجول المتراكم
+  s.wanderOrigin = { x: pos.x, z: pos.z };
+  s.lastPos = { x: pos.x, z: pos.z };
+
+  // ── عند الوصول للهدف: ابدأ هدفاً جديداً فوراً ────────────
+  s.bot.on('goal_reached', () => {
+    if (s.isConnected && s.bot) {
+      log('bot', 'وصل الهدف ← هدف جديد فوراً', id);
+      doWander(id);
+    }
+  });
+
+  // ── عند فشل المسار: حاول مسار آخر ──────────────────────
+  s.bot.on('path_update', (r) => {
+    if ((r.status === 'noPath' || r.status === 'timeout') && s.isConnected && s.bot) {
+      log('warn', `مسار فشل (${r.status}) ← هدف جديد`, id);
+      setTimeout(() => doWander(id), 500);
+    }
+  });
+
+  // ── كشف التعثّر: إذا لم يتحرك البوت 5 ثوانٍ → هدف جديد ─
+  s.stuckTimer = setInterval(() => {
+    if (!s.isConnected || !s.bot || !s.bot.entity) return;
+    const cur = s.bot.entity.position;
+    const last = s.lastPos;
+    if (last) {
+      const dx = Math.abs(cur.x - last.x);
+      const dz = Math.abs(cur.z - last.z);
+      if (dx < 0.5 && dz < 0.5) {
+        log('warn', 'البوت عالق! ← هدف جديد', id);
+        doWander(id);
+      }
+    }
+    s.lastPos = { x: cur.x, z: cur.z };
+  }, 5000);
+
+  // ── بدء التجول فوراً ─────────────────────────────────────
   doWander(id);
-  s.wanderTimer = setInterval(() => {
-    if (s.isConnected && s.bot) doWander(id);
-  }, config.settings.wanderInterval);
 
   notify(
     `✅ *\`${id}\` دخل السيرفر!*\n\n🌐 \`${s.host}:${s.port}\`\n📍 (${Math.floor(pos.x)},${Math.floor(pos.y)},${Math.floor(pos.z)})\n👥 ${Object.keys(s.bot.players).length} لاعب`,
@@ -704,12 +741,45 @@ function doWander(id) {
   const s = botsMap.get(id);
   if (!s || !s.bot || !s.bot.entity || !s.isConnected) return;
   const pos = s.bot.entity.position;
-  const r   = config.settings.wanderRadius;
-  const tx  = pos.x + (Math.random() * r * 2 - r);
-  const tz  = pos.z + (Math.random() * r * 2 - r);
-  log('bot', `(${Math.floor(tx)}, ?, ${Math.floor(tz)})`, id);
-  try { s.bot.pathfinder.setGoal(new GoalNear(tx, pos.y, tz, 2), true); }
-  catch (e) { log('warn', `تجول: ${e.message}`, id); }
+
+  // نطاق تجول أكبر لضمان الحركة المستمرة (50 بلوك)
+  const r  = Math.max(config.settings.wanderRadius, 50);
+
+  // تجول متراكم: البوت يبتعد تدريجياً ثم يعود
+  let tx, tz;
+  if (s.wanderOrigin) {
+    // 70% ابتعاد عشوائي، 30% عودة نحو المنشأ لتجنّب الابتعاد الكبير
+    if (Math.random() < 0.3) {
+      // عودة نحو نقطة البداية
+      tx = s.wanderOrigin.x + (Math.random() * 20 - 10);
+      tz = s.wanderOrigin.z + (Math.random() * 20 - 10);
+    } else {
+      tx = pos.x + (Math.random() * r * 2 - r);
+      tz = pos.z + (Math.random() * r * 2 - r);
+    }
+  } else {
+    tx = pos.x + (Math.random() * r * 2 - r);
+    tz = pos.z + (Math.random() * r * 2 - r);
+  }
+
+  log('bot', `← (${Math.floor(tx)}, ?, ${Math.floor(tz)})`, id);
+  try {
+    s.bot.pathfinder.setGoal(new GoalNear(tx, pos.y, tz, 1), true);
+  } catch (e) {
+    log('warn', `تجول: ${e.message}`, id);
+    // محاولة بهدف أقرب عند الخطأ
+    try {
+      const fallbackR = 10;
+      s.bot.pathfinder.setGoal(
+        new GoalNear(
+          pos.x + (Math.random() * fallbackR * 2 - fallbackR),
+          pos.y,
+          pos.z + (Math.random() * fallbackR * 2 - fallbackR),
+          1
+        ), true
+      );
+    } catch (_) {}
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════
