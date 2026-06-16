@@ -81,9 +81,17 @@ function loadBotsConfig() {
 function saveBotsConfig() {
   const data = [];
   for (const [id, s] of botsMap) {
-    data.push({ id, host: s.host, port: s.port, username: s.username, version: s.version });
+    data.push({ id, host: s.host, port: s.port, username: s.username, version: s.version, password: s.password });
   }
   fs.writeFileSync(BOTS_FILE, JSON.stringify(data, null, 2), 'utf8');
+}
+
+// توليد كلمة مرور عشوائية قوية
+function generatePassword(len = 10) {
+  const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let pass = '';
+  for (let i = 0; i < len; i++) pass += chars[Math.floor(Math.random() * chars.length)];
+  return pass;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -102,11 +110,12 @@ function newBotId() {
   return `b${botCounter}`;
 }
 
-function createBotState(id, host, port, username = 'BotPlayer', version = '1.20.1') {
+function createBotState(id, host, port, username = 'BotPlayer', version = '1.20.1', password = null) {
   return {
     id, host, port,
-    username,              // الاسم الأساسي المحفوظ
-    currentUsername: username, // الاسم الحالي المستخدم
+    username,
+    currentUsername: username,
+    password: password || generatePassword(), // كلمة مرور محفوظة للتسجيل التلقائي
     version,
     bot: null,
     isConnected: false,
@@ -120,6 +129,7 @@ function createBotState(id, host, port, username = 'BotPlayer', version = '1.20.
     wanderOrigin: null,
     lastWanderTime: 0,
     isWandering: false,
+    isRegistered: false,   // هل سجّل في هذه الجلسة
   };
 }
 
@@ -561,6 +571,7 @@ function startBot(id) {
   clearBotTimers(s);
   s.isBotRunning = true;
   s.reconnectCount++;
+  s.isRegistered = false; // Reset for auto-auth
 
   // ── اختيار الاسم: أول اتصال = الاسم الأصلي، إعادة اتصال = اسم جديد ──
   s.currentUsername = getNextUsername(s);
@@ -589,6 +600,7 @@ function startBot(id) {
   s.bot.once('spawn',      () => onSpawn(id));
   s.bot.on('chat',         (u, m) => onChat(id, u, m));
   s.bot.on('whisper',      (u, m) => onWhisper(id, u, m));
+  s.bot.on('messagestr',   (m) => onMessageStr(id, m));
   s.bot.on('kicked',       (r) => onKicked(id, r));
   s.bot.on('error',        (e) => onError(id, e));
   s.bot.on('end',          (r) => onEnd(id, r));
@@ -688,6 +700,27 @@ function onChat(id, username, message) {
   log('info', `[عام] ${username}: ${message}`, id);
   if (config.telegram.forwardChat) {
     notify(`💬 [*${id}*] *${username}*: ${message}`);
+  }
+}
+
+function onMessageStr(id, message) {
+  const s = botsMap.get(id);
+  if (!s || !s.bot) return;
+
+  const msg = message.toLowerCase();
+
+  if ((msg.includes('/login') || msg.includes('login') || msg.includes('تسجيل الدخول')) && !s.isRegistered) {
+    log('info', 'محاولة تسجيل الدخول تلقائياً...', id);
+    setTimeout(() => {
+      if (s.bot) s.bot.chat(`/login ${s.password}`);
+    }, 1000);
+    s.isRegistered = true;
+  } else if ((msg.includes('/register') || msg.includes('register') || msg.includes('تسجيل حساب')) && !s.isRegistered) {
+    log('info', 'محاولة إنشاء حساب تلقائياً...', id);
+    setTimeout(() => {
+      if (s.bot) s.bot.chat(`/register ${s.password} ${s.password}`);
+    }, 1000);
+    s.isRegistered = true;
   }
 }
 
