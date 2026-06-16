@@ -600,7 +600,7 @@ function startBot(id) {
   s.bot.once('spawn',      () => onSpawn(id));
   s.bot.on('chat',         (u, m) => onChat(id, u, m));
   s.bot.on('whisper',      (u, m) => onWhisper(id, u, m));
-  s.bot.on('messagestr',   (m) => onMessageStr(id, m));
+  s.bot.on('message',      (m, p) => onMessage(id, m, p));
   s.bot.on('kicked',       (r) => onKicked(id, r));
   s.bot.on('error',        (e) => onError(id, e));
   s.bot.on('end',          (r) => onEnd(id, r));
@@ -703,23 +703,32 @@ function onChat(id, username, message) {
   }
 }
 
-function onMessageStr(id, message) {
+function onMessage(id, jsonMsg, position) {
   const s = botsMap.get(id);
   if (!s || !s.bot) return;
 
-  const msg = message.toLowerCase();
+  const msg = jsonMsg.toString();
+  const lowerMsg = msg.toLowerCase();
 
-  if ((msg.includes('/login') || msg.includes('login') || msg.includes('تسجيل الدخول')) && !s.isRegistered) {
-    log('info', 'محاولة تسجيل الدخول تلقائياً...', id);
+  // طباعة رسائل السيرفر لفهم ما يطلبه
+  if (position === 'system' || !msg.includes('<')) {
+    log('info', `[سيرفر] ${msg}`, id);
+  }
+
+  // كشف طلب تسجيل الدخول
+  if ((lowerMsg.includes('/login') || lowerMsg.includes('login') || lowerMsg.includes('تسجيل الدخول')) && !s.isRegistered) {
+    log('warn', 'يُطلب تسجيل الدخول... جاري المحاولة', id);
     setTimeout(() => {
       if (s.bot) s.bot.chat(`/login ${s.password}`);
-    }, 1000);
+    }, 1500);
     s.isRegistered = true;
-  } else if ((msg.includes('/register') || msg.includes('register') || msg.includes('تسجيل حساب')) && !s.isRegistered) {
-    log('info', 'محاولة إنشاء حساب تلقائياً...', id);
+  } 
+  // كشف طلب التسجيل الجديد
+  else if ((lowerMsg.includes('/register') || lowerMsg.includes('register') || lowerMsg.includes('تسجيل حساب')) && !s.isRegistered) {
+    log('warn', 'يُطلب تسجيل حساب... جاري الإنشاء', id);
     setTimeout(() => {
       if (s.bot) s.bot.chat(`/register ${s.password} ${s.password}`);
-    }, 1000);
+    }, 1500);
     s.isRegistered = true;
   }
 }
