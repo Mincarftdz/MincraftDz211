@@ -776,7 +776,6 @@ function onEnd(id, reason) {
 
 function onDeath(id) {
   log('warn', 'مات! إحياء تلقائي...', id);
-  notify(`💀 *\`${id}\` مات!* سيعيد الإحياء تلقائياً...`);
   const s = botsMap.get(id);
   if (s && s.bot) setTimeout(() => { try { s.bot.respawn(); } catch (_) {} }, 1500);
 }
@@ -785,7 +784,6 @@ function onHealth(id) {
   const s = botsMap.get(id);
   if (s && s.bot && s.bot.health < 5) {
     log('warn', `صحة منخفضة: ${s.bot.health.toFixed(1)}`, id);
-    notify(`❤️ *تحذير [\`${id}\`]:* صحة منخفضة (${s.bot.health.toFixed(1)}/20)`);
   }
 }
 
@@ -793,14 +791,12 @@ function onPlayerJoined(id, player) {
   const s = botsMap.get(id);
   if (!s || !s.bot || player.username === s.bot.username) return;
   log('info', `دخل: ${player.username}`, id);
-  notify(`🟢 [*${id}*] دخل: \`${player.username}\``);
 }
 
 function onPlayerLeft(id, player) {
   const s = botsMap.get(id);
   if (!s || !s.bot || player.username === s.bot.username) return;
   log('info', `غادر: ${player.username}`, id);
-  notify(`🔴 [*${id}*] غادر: \`${player.username}\``);
 }
 
 // ═══════════════════════════════════════════════════════════════
