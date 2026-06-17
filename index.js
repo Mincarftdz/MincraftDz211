@@ -631,7 +631,7 @@ function startBot(id) {
       port:     s.port,
       username: s.currentUsername,
       auth:     config.bot.auth,
-      version:  s.version,
+      version:  (s.version.toLowerCase() === 'auto' || s.version.toLowerCase() === 'false') ? false : s.version,
       hideErrors: false,
       viewDistance: 'tiny', // تقليل اللاق بمنع تحميل قطع كثيرة
     });
