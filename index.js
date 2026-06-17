@@ -220,10 +220,11 @@ function botMenuKeyboard(id) {
         { text: '🔧 تغيير السيرفر',    callback_data: `${id}:sv`  },
       ],
       [
+        { text: '🧩 تغيير الإصدار',    callback_data: `${id}:ver` },
         { text: '✏️ تغيير اسم البوت',  callback_data: `${id}:nm`  },
-        { text: '🗑️ حذف هذا البوت',   callback_data: `${id}:del` },
       ],
       [
+        { text: '🗑️ حذف هذا البوت',   callback_data: `${id}:del` },
         { text: '↩️ القائمة الرئيسية', callback_data: 'main'      },
       ],
     ],
@@ -274,10 +275,23 @@ function initTelegram() {
         send(chatId, '❌ عنوان غير صحيح! مثال: `play.server.net:25565`', mainMenuKeyboard());
         return;
       }
-      pendingAction.set(chatId, { type: 'new_bot_name', host, port });
+      pendingAction.set(chatId, { type: 'new_bot_version', host, port });
       send(chatId,
         `✅ السيرفر: \`${host}:${port}\`\n\n` +
-        `✏️ *الخطوة 2/2 — أرسل اسم البوت:*\n` +
+        `🧩 *الخطوة 2/3 — أرسل إصدار السيرفر:*\n` +
+        `_مثال: \`1.20.1\`، \`1.20.2\`، \`1.19.4\`..._`
+      );
+      return;
+    }
+
+    // ── خطوة 2: استقبال الإصدار ──────────────────────────
+    if (action.type === 'new_bot_version') {
+      const version = text.trim();
+      const { host, port } = action;
+      pendingAction.set(chatId, { type: 'new_bot_name', host, port, version });
+      send(chatId,
+        `✅ الإصدار: \`${version}\`\n\n` +
+        `✏️ *الخطوة 3/3 — أرسل اسم البوت:*\n` +
         `_مثال: \`CoolBot\` أو \`Player123\` (ماكسيموم 16 حرف)_`
       );
       return;
@@ -286,19 +300,20 @@ function initTelegram() {
     // ── خطوة 2: استقبال اسم البوت وإنشاؤه ──────────────
     if (action.type === 'new_bot_name') {
       const username = text.replace(/\s+/g, '_').slice(0, 16);
-      const { host, port } = action;
+      const { host, port, version } = action;
       const id    = newBotId();
-      const state = createBotState(id, host, port, username);
+      const state = createBotState(id, host, port, username, version);
       botsMap.set(id, state);
       saveBotsConfig();
       send(chatId,
         `🎉 *تم إنشاء البوت \`${id}\`!*\n\n` +
         `🌐 السيرفر: \`${host}:${port}\`\n` +
+        `🧩 الإصدار: \`${version}\`\n` +
         `👤 الاسم: \`${username}\`\n\n` +
         `🔄 جاري الاتصال...`,
         botMenuKeyboard(id)
       );
-      log('info', `بوت جديد: ${id} (${username}) → ${host}:${port}`);
+      log('info', `بوت جديد: ${id} (${username}) → ${host}:${port} [${version}]`);
       startBot(id);
       return;
     }
@@ -320,6 +335,26 @@ function initTelegram() {
         botMenuKeyboard(action.botId)
       );
       log('info', `تغيير اسم ${action.botId}: ${oldName} → ${newName}`);
+      return;
+    }
+
+    // ── تغيير إصدار البوت ─────────────────────────────────
+    if (action.type === 'version') {
+      const s = botsMap.get(action.botId);
+      if (!s) { send(chatId, '❌ البوت غير موجود!', mainMenuKeyboard()); return; }
+      const newVer = text.trim();
+      const oldVer = s.version;
+      s.version = newVer;
+      saveBotsConfig();
+      stopBot(action.botId);
+      setTimeout(() => startBot(action.botId), 1000);
+      send(chatId,
+        `✅ *تم تغيير إصدار \`${action.botId}\`!*\n\n` +
+        `من: \`${oldVer}\`\nإلى: \`${newVer}\`\n\n` +
+        `🔄 جاري إعادة الاتصال...`,
+        botMenuKeyboard(action.botId)
+      );
+      log('info', `تغيير إصدار ${action.botId}: ${oldVer} → ${newVer}`);
       return;
     }
 
@@ -399,7 +434,7 @@ function initTelegram() {
     if (data === 'add') {
       pendingAction.set(chatId, { type: 'new_bot_server' });
       send(chatId,
-        `➕ *إضافة بوت جديد — الخطوة 1/2*\n\n` +
+        `➕ *إضافة بوت جديد — الخطوة 1/3*\n\n` +
         `أرسل عنوان السيرفر:\n\`IP:PORT\`\n\n` +
         `مثال:\n\`play.hypixel.net:25565\`\nأو فقط: \`play.hypixel.net\``
       );
@@ -533,6 +568,15 @@ function initTelegram() {
           );
           break;
 
+        case 'ver':
+          pendingAction.set(chatId, { type: 'version', botId: id });
+          send(chatId,
+            `🧩 *تغيير إصدار \`${id}\`*\n\n` +
+            `الحالي: \`${s.version}\`\n\n` +
+            `أرسل الإصدار الجديد:\n_مثال: \`1.20.2\`_`
+          );
+          break;
+
         case 'nm':
           pendingAction.set(chatId, { type: 'rename', botId: id });
           send(chatId,
@@ -589,6 +633,7 @@ function startBot(id) {
       auth:     config.bot.auth,
       version:  s.version,
       hideErrors: false,
+      viewDistance: 'tiny', // تقليل اللاق بمنع تحميل قطع كثيرة
     });
   } catch (err) {
     log('error', `فشل: ${err.message}`, id);
@@ -806,9 +851,9 @@ function doWander(id) {
   const s = botsMap.get(id);
   if (!s || !s.bot || !s.bot.entity || !s.isConnected) return;
 
-  // منع الاستدعاءات المتكررة أسرع من 2 ثانية
+  // منع الاستدعاءات المتكررة أسرع من 4 ثواني لتقليل اللاق
   const now = Date.now();
-  if (now - s.lastWanderTime < 2000) return;
+  if (now - s.lastWanderTime < 4000) return;
   s.lastWanderTime = now;
 
   const pos = s.bot.entity.position;
